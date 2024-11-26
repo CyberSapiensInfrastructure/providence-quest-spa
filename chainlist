@@ -1,0 +1,15 @@
+const mainnet = {
+  chainId: 43113,
+  name: "FUJI",
+  currency: "AVAX",
+  explorerUrl: "",
+  rpcUrl: "https://api.avax-test.network/ext/bc/C/rpc",
+};
+
+const hardhatChain = {
+  chainId: 31337,
+  name: "Hardhat",
+  currency: "ETH",
+  explorerUrl: "",
+  rpcUrl: "http://127.0.0.1:8545",
+};
