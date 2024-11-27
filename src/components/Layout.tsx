@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ConnectButton from "./ConnectButton";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { ethers, providers } from "ethers";
 import { useWeb3ModalProvider } from "@web3modal/ethers5/react";
 import {
@@ -11,6 +11,17 @@ import {
 import StackedNotifications from "./Notification";
 import ShuffleLoader from "./Loader";
 import CountdownTimer from "./CountdownTimer";
+import {
+  startTwitterAuth,
+  checkTwitterLike,
+  setAccessToken,
+} from "../app/slices/twitterSlice";
+import type { RootState } from "../app/store";
+import type { AppDispatch } from "../app/store";
+import { QUESTS } from "../constants/quests";
+import QuestItem from "./QuestItem";
+import { twitterService } from "../services/twitterService";
+import axios from "axios";
 
 const BackgroundCompiler = React.lazy(
   () => import("../components/BackgroundCompiler")
@@ -39,8 +50,13 @@ const Layout: React.FC = () => {
     telegram: "",
     discord: "",
   });
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const [isCopied, setIsCopied] = useState(false);
+  const { hasLikedTargetTweet, loading, error } = useSelector(
+    (state: RootState) => state.twitter
+  );
+  const [twitterUsername, setTwitterUsername] = useState("");
+  const [isCheckingTwitter, setIsCheckingTwitter] = useState(false);
 
   useEffect(() => {
     const handleDisconnect = () => {
@@ -97,6 +113,115 @@ const Layout: React.FC = () => {
         [field]: e.target.value,
       }));
     };
+
+  useEffect(() => {
+    const handleTwitterCallback = (event: MessageEvent) => {
+      if (event.data.type === "TWITTER_AUTH_SUCCESS") {
+        const { accessToken } = event.data;
+        dispatch(setAccessToken(accessToken));
+        if (twitterUsername) {
+          dispatch(
+            checkTwitterLike({ username: twitterUsername, accessToken })
+          );
+        }
+      }
+    };
+
+    window.addEventListener("message", handleTwitterCallback);
+    return () => window.removeEventListener("message", handleTwitterCallback);
+  }, [dispatch, twitterUsername]);
+
+  const handleTwitterCheck = async () => {
+    if (!twitterUsername.trim()) return;
+
+    setIsCheckingTwitter(true);
+    try {
+      console.log("Starting Twitter check for:", twitterUsername);
+
+      // Auth URL'i al ve yeni pencerede aç
+      const authUrl = await twitterService.startAuth();
+      console.log("Opening auth URL:", authUrl);
+
+      // Yeni pencere aç
+      const authWindow = window.open(
+        authUrl,
+        "Twitter Auth",
+        "width=600,height=600"
+      );
+
+      if (!authWindow) {
+        console.error("Popup was blocked");
+        return;
+      }
+
+      // Auth window kapatıldığında kontrol et
+      const checkWindowClosed = setInterval(() => {
+        if (authWindow.closed) {
+          clearInterval(checkWindowClosed);
+          console.log("Auth window closed");
+          setIsCheckingTwitter(false);
+        }
+      }, 500);
+    } catch (error) {
+      console.error("Error during Twitter check:", error);
+      setIsCheckingTwitter(false);
+    }
+  };
+
+  // Auth callback listener'ı ekleyelim
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      // Origin kontrolü
+      if (event.origin !== window.location.origin) {
+        console.log("Ignoring message from unknown origin:", event.origin);
+        return;
+      }
+
+      console.log("Received message:", event.data);
+
+      if (event.data.type === "TWITTER_AUTH_SUCCESS") {
+        console.log("Auth success, got token:", event.data.accessToken);
+
+        try {
+          setIsCheckingTwitter(true);
+
+          // Like kontrolü yap
+          const response = await axios.post(
+            "http://localhost:3001/api/check-twitter-like",
+            {
+              username: twitterUsername,
+              accessToken: event.data.accessToken,
+            }
+          );
+
+          console.log("Like check response:", response.data);
+
+          if (response.data.success && response.data.hasLiked) {
+            // Quest'i tamamlandı olarak işaretle
+            console.log("Quest completed!");
+            dispatch(setAccessToken(event.data.accessToken));
+            // Redux state'i güncelle
+            dispatch({
+              type: "twitter/setLikeStatus",
+              payload: true,
+            });
+          } else {
+            console.log("Tweet not liked yet");
+          }
+        } catch (error) {
+          console.error("Error checking like:", error);
+        } finally {
+          setIsCheckingTwitter(false);
+        }
+      } else if (event.data.type === "TWITTER_AUTH_ERROR") {
+        console.error("Auth error:", event.data.error);
+        setIsCheckingTwitter(false);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [dispatch, twitterUsername]);
 
   // Örnek tarih - bunu istediğiniz tarihe ayarlayabilirsiniz
   const questEndDate = new Date("2024-12-31T23:59:59");
@@ -209,8 +334,40 @@ const Layout: React.FC = () => {
 
             {/* Form Fields */}
             <div className="space-y-6">
+              {/* Twitter Input with Check Button */}
+              <div className="space-y-1">
+                <div className="relative flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={twitterUsername}
+                    onChange={(e) => setTwitterUsername(e.target.value)}
+                    className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider focus:outline-none text-white/80 placeholder:text-white/20 focus:text-[#9f7aea]"
+                    placeholder="Twitter Username"
+                    disabled={!walletProvider || isCheckingTwitter}
+                  />
+                  <button
+                    onClick={handleTwitterCheck}
+                    disabled={
+                      !twitterUsername.trim() ||
+                      isCheckingTwitter ||
+                      !walletProvider
+                    }
+                    className="absolute right-0 px-3 py-1 text-xs text-white/60 hover:text-white/80 disabled:opacity-50 disabled:hover:text-white/60"
+                  >
+                    {isCheckingTwitter ? (
+                      <span className="text-yellow-500">Checking...</span>
+                    ) : hasLikedTargetTweet ? (
+                      <span className="text-green-500">Verified ✓</span>
+                    ) : (
+                      "Check"
+                    )}
+                  </button>
+                </div>
+                <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
+              </div>
+
+              {/* Diğer input'lar */}
               {[
-                { key: "twitter" as const, placeholder: "Twitter" },
                 { key: "telegram" as const, placeholder: "Telegram" },
                 { key: "discord" as const, placeholder: "Discord" },
               ].map(({ key, placeholder }) => (
@@ -234,24 +391,21 @@ const Layout: React.FC = () => {
                 QUESTS
               </h2>
               <div className="space-y-3">
-                {["Follow on Twitter", "Join Telegram"].map((quest, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 text-white/60"
-                  >
-                    <div className="w-1 h-1 bg-[#7042f88b]" />
-                    <span className="text-sm font-light">{quest}</span>
-                  </div>
-                ))}
-                {["Like a tweet"].map((quest, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 text-white/60 line-through blur-[1px]"
-                  >
-                    <div className="w-1 h-1 bg-[#7042f88b]" />
-                    <span className="text-sm font-light">{quest}</span>
-                  </div>
-                ))}
+                <QuestItem
+                  quest={QUESTS.TWITTER_LIKE}
+                  isVerifying={loading}
+                  isCompleted={hasLikedTargetTweet}
+                />
+                <QuestItem
+                  quest={QUESTS.TWITTER_FOLLOW}
+                  isVerifying={false}
+                  isCompleted={false}
+                />
+                <QuestItem
+                  quest={QUESTS.TELEGRAM}
+                  isVerifying={false}
+                  isCompleted={false}
+                />
               </div>
             </div>
 
