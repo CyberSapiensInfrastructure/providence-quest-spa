@@ -32,17 +32,41 @@ const DisconnectedMessage = () => (
   </div>
 );
 
+const TWITTER_TASKS = {
+  FOLLOW: {
+    account: "@PlayProvidence",
+    url: "https://twitter.com/PlayProvidence",
+  },
+  LIKE: {
+    tweetId: "1234567890",
+    url: "https://twitter.com/PlayProvidence/status/1234567890",
+  },
+};
+
 const Layout: React.FC = () => {
   const { walletProvider } = useWeb3ModalProvider();
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [formInputs, setFormInputs] = useState({
     twitter: "",
-    telegram: "",
-    discord: "",
+    email: "",
   });
   const dispatch = useDispatch();
   const [isCopied, setIsCopied] = useState(false);
   const [isConnectingTwitter, setIsConnectingTwitter] = useState(false);
+  const [isTwitterVerified, setIsTwitterVerified] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [completedTasks, setCompletedTasks] = useState({
+    follow: false,
+    like: false,
+  });
+  const [twitterStep, setTwitterStep] = useState<
+    "connect" | "verify" | "completed"
+  >("connect");
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
 
   useEffect(() => {
     const handleDisconnect = () => {
@@ -50,8 +74,7 @@ const Layout: React.FC = () => {
       setWalletAddress("");
       setFormInputs({
         twitter: "",
-        telegram: "",
-        discord: "",
+        email: "",
       });
     };
 
@@ -114,47 +137,14 @@ const Layout: React.FC = () => {
   };
 
   useEffect(() => {
-    // URL'den code parametresini kontrol et
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get("code");
 
     if (code) {
-      console.log("Received auth code:", code);
-      getTwitterToken(code);
+      setTwitterStep("verify");
+      window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
-
-  const getTwitterToken = async (code: string) => {
-    try {
-      const response = await axios.get(
-        `https://gtt-2mc5433laq-uc.a.run.app/?x=${code}`
-      );
-
-      console.log("Token response:", response.data);
-
-      if (response.data.access_token) {
-        console.log("Access token received:", response.data.access_token);
-      }
-    } catch (error) {
-      console.error("Error getting token:", error);
-    }
-  };
-
-  const checkTwitterLike = async (accessToken: string) => {
-    try {
-      const response = await axios.post(
-        "http://localhost:3001/api/twitter/check-like",
-        {
-          username: formInputs.twitter,
-          accessToken,
-        }
-      );
-
-      console.log("Like check response:", response.data);
-    } catch (error) {
-      console.error("Error checking like:", error);
-    }
-  };
 
   const handleConnectTwitter = () => {
     setIsConnectingTwitter(true);
@@ -163,7 +153,7 @@ const Layout: React.FC = () => {
         response_type: "code",
         client_id: "UmF0dzZCU1hGcHJMSFB1cTBUdWQ6MTpjaQ",
         redirect_uri: "http://localhost:5173",
-        scope: "tweet.read users.read like.read",
+        scope: "users.read",
         state: "state",
         code_challenge: "challenge",
         code_challenge_method: "plain",
@@ -175,6 +165,234 @@ const Layout: React.FC = () => {
       console.error("Error connecting Twitter:", error);
       setIsConnectingTwitter(false);
     }
+  };
+
+  const handleVerifyTwitter = () => {
+    if (!formInputs.twitter) {
+      return;
+    }
+    setTwitterStep("completed");
+    setIsTwitterVerified(true);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      if (
+        !walletAddress ||
+        !formInputs.twitter ||
+        !formInputs.email ||
+        twitterStep !== "completed"
+      ) {
+        setNotification({
+          show: true,
+          message: "Please complete all fields and tasks",
+          type: "error",
+        });
+        return;
+      }
+
+      // Farklı bir CORS proxy kullanalım
+      const corsProxy = "https://api.allorigins.win/get?url=";
+      const targetUrl = `https://hellobora-2mc5433laq-uc.a.run.app/?x=${walletAddress}&y=${formInputs.twitter}&z=${formInputs.email}`;
+
+      const response = await fetch(corsProxy + encodeURIComponent(targetUrl));
+      console.log("Response Status:", response.status);
+
+      const data = await response.json();
+      console.log("Response Data:", data);
+
+      if (data.contents) {
+        setIsSubmitted(true);
+        setNotification({
+          show: true,
+          message: data.contents,
+          type: "success",
+        });
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setNotification({
+        show: true,
+        message: "Something went wrong. Please try again later.",
+        type: "error",
+      });
+    }
+  };
+
+  const handleReset = () => {
+    setIsSubmitted(false);
+    setTwitterStep("connect");
+    setIsTwitterVerified(false);
+    setFormInputs({
+      twitter: "",
+      email: "",
+    });
+    setNotification(null);
+  };
+
+  const renderFormContent = () => {
+    if (isSubmitted) {
+      return (
+        <div className="space-y-6">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <input
+                type="text"
+                value={formInputs.twitter}
+                className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider text-white/80"
+                disabled
+              />
+              <button
+                onClick={handleReset}
+                className="px-3 py-1.5 text-xs bg-[#7042f88b]/10 hover:bg-[#7042f88b]/20 border border-[#7042f88b]/20 rounded transition-all duration-300"
+              >
+                Reset
+              </button>
+            </div>
+            <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <div className="relative flex items-center gap-2">
+            {twitterStep === "connect" && (
+              <button
+                onClick={handleConnectTwitter}
+                disabled={isConnectingTwitter || !walletProvider}
+                className="w-full px-3 py-1.5 text-xs bg-[#7042f88b]/10 hover:bg-[#7042f88b]/20 border border-[#7042f88b]/20 rounded transition-all duration-300"
+              >
+                {isConnectingTwitter ? "Connecting..." : "Connect Twitter"}
+              </button>
+            )}
+
+            {twitterStep === "verify" && (
+              <>
+                <input
+                  type="text"
+                  value={formInputs.twitter}
+                  onChange={handleInputChange("twitter")}
+                  className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider focus:outline-none text-white/80 placeholder:text-white/20 focus:text-[#9f7aea]"
+                  placeholder="Enter your Twitter username"
+                />
+                <button
+                  onClick={handleVerifyTwitter}
+                  disabled={!formInputs.twitter}
+                  className="px-3 py-1.5 text-xs bg-[#7042f88b]/10 hover:bg-[#7042f88b]/20 border border-[#7042f88b]/20 rounded transition-all duration-300"
+                >
+                  Verify Account
+                </button>
+              </>
+            )}
+
+            {twitterStep === "completed" && (
+              <div className="w-full space-y-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-white/80">
+                    {formInputs.twitter}
+                  </span>
+                  <span className="text-[#7042f88b] text-xs">Verified ✓</span>
+                </div>
+                <div className="w-full">
+                  <input
+                    type="email"
+                    value={formInputs.email}
+                    onChange={handleInputChange("email")}
+                    className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider focus:outline-none text-white/80 placeholder:text-white/20 focus:text-[#9f7aea]"
+                    placeholder="Enter your email"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
+        </div>
+      </div>
+    );
+  };
+
+  const renderQuests = () => (
+    <div className="space-y-3">
+      <div
+        className={`flex items-center gap-3 ${
+          twitterStep === "completed"
+            ? "text-white/60 line-through opacity-50 blur-[0.3px]"
+            : "text-white/60"
+        }`}
+      >
+        <div className="w-1 h-1 bg-[#7042f88b]" />
+        <span className="text-sm font-light">
+          Follow{" "}
+          <a
+            href={TWITTER_TASKS.FOLLOW.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#7042f88b] hover:text-[#9f7aea]"
+          >
+            {TWITTER_TASKS.FOLLOW.account}
+          </a>
+        </span>
+      </div>
+      <div
+        className={`flex items-center gap-3 ${
+          twitterStep === "completed"
+            ? "text-white/60 line-through opacity-50 blur-[0.3px]"
+            : "text-white/60"
+        }`}
+      >
+        <div className="w-1 h-1 bg-[#7042f88b]" />
+        <span className="text-sm font-light">
+          Like{" "}
+          <a
+            href={TWITTER_TASKS.LIKE.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#7042f88b] hover:text-[#9f7aea]"
+          >
+            this tweet
+          </a>
+        </span>
+      </div>
+    </div>
+  );
+
+  const Notification = () => {
+    useEffect(() => {
+      if (notification?.show) {
+        const timer = setTimeout(() => {
+          setNotification(null);
+        }, 3000); // 3 saniye sonra kaybolacak
+        return () => clearTimeout(timer);
+      }
+    }, [notification]);
+
+    if (!notification?.show) return null;
+
+    return (
+      <div
+        className={`fixed top-4 left-1/2 -translate-x-1/2 px-6 py-3 rounded-md text-sm font-medium transition-all duration-300 flex items-center gap-3 ${
+          notification.type === "success"
+            ? "bg-[#7042f88b]/20 text-[#7042f88b]"
+            : "bg-red-500/20 text-red-500"
+        }`}
+      >
+        {notification.message}
+        {notification.type === "error" && (
+          <button
+            onClick={() => {
+              setIsSubmitted(false);
+              setNotification(null);
+            }}
+            className="text-xs underline hover:opacity-80"
+          >
+            Try Again
+          </button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -273,83 +491,34 @@ const Layout: React.FC = () => {
               </div>
             )}
 
-            {/* Form Fields */}
-            <div className="space-y-6">
-              {[
-                { key: "twitter" as const, placeholder: "Twitter" },
-                { key: "telegram" as const, placeholder: "Telegram" },
-                { key: "discord" as const, placeholder: "Discord" },
-              ].map(({ key, placeholder }) => (
-                <div key={key} className="space-y-1">
-                  <input
-                    type="text"
-                    value={formInputs[key]}
-                    onChange={handleInputChange(key)}
-                    className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider focus:outline-none text-white/80 placeholder:text-white/20 focus:text-[#9f7aea]"
-                    placeholder={placeholder}
-                    disabled={!walletProvider}
-                  />
-                  <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
-                </div>
-              ))}
-              <div className="space-y-1">
-                <div className="relative flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={formInputs.twitter}
-                    onChange={handleInputChange("twitter")}
-                    className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider focus:outline-none text-white/80 placeholder:text-white/20 focus:text-[#9f7aea]"
-                    placeholder="Twitter"
-                    disabled={!walletProvider || isConnectingTwitter}
-                  />
-                  <button
-                    onClick={handleConnectTwitter}
-                    disabled={isConnectingTwitter || !walletProvider}
-                    className="px-3 py-1.5 text-xs bg-[#7042f88b]/10 hover:bg-[#7042f88b]/20 border border-[#7042f88b]/20 rounded transition-all duration-300"
-                  >
-                    {isConnectingTwitter ? "Connecting..." : "Connect Twitter"}
-                  </button>
-                </div>
-                <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
-              </div>
-            </div>
+            {renderFormContent()}
 
             {/* Quest Section */}
             <div className="mt-12 space-y-4">
               <h2 className="text-xs tracking-widest text-[#7042f88b] uppercase">
                 QUESTS
               </h2>
-              <div className="space-y-3">
-                {["Follow on Twitter", "Join Telegram"].map((quest, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 text-white/60"
-                  >
-                    <div className="w-1 h-1 bg-[#7042f88b]" />
-                    <span className="text-sm font-light">{quest}</span>
-                  </div>
-                ))}
-                {["Like a tweet"].map((quest, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 text-white/60 line-through blur-[1px]"
-                  >
-                    <div className="w-1 h-1 bg-[#7042f88b]" />
-                    <span className="text-sm font-light">{quest}</span>
-                  </div>
-                ))}
-              </div>
+              {renderQuests()}
             </div>
 
-            {/* Submit Button */}
+            {/* Submit Button - her zaman görünür olacak */}
             <div className="mt-12 flex md:justify-end justify-center">
               <button
                 className="md:w-fit w-full py-3 px-6 bg-[#7042f88b]/5 border border-[#7042f88b]/20 hover:bg-[#7042f88b]/10 hover:border-[#7042f88b]/30 disabled:opacity-50 disabled:hover:bg-[#7042f88b]/5 transition-all duration-300 ease-out text-xs tracking-widest"
-                disabled={!walletProvider}
+                disabled={
+                  !walletProvider ||
+                  twitterStep !== "completed" ||
+                  !formInputs.email ||
+                  isSubmitted
+                }
+                onClick={isSubmitted ? handleReset : handleSubmit}
               >
                 SUBMIT
               </button>
             </div>
+
+            {/* Notification */}
+            <Notification />
           </div>
         </main>
       </div>
