@@ -11,6 +11,7 @@ import {
 import StackedNotifications from "./Notification";
 import ShuffleLoader from "./Loader";
 import CountdownTimer from "./CountdownTimer";
+import axios from "axios";
 
 const BackgroundCompiler = React.lazy(
   () => import("../components/BackgroundCompiler")
@@ -41,6 +42,7 @@ const Layout: React.FC = () => {
   });
   const dispatch = useDispatch();
   const [isCopied, setIsCopied] = useState(false);
+  const [isConnectingTwitter, setIsConnectingTwitter] = useState(false);
 
   useEffect(() => {
     const handleDisconnect = () => {
@@ -108,6 +110,70 @@ const Layout: React.FC = () => {
       setTimeout(() => setIsCopied(false), 2000); // 2 saniye sonra reset
     } catch (err) {
       console.error("Failed to copy text: ", err);
+    }
+  };
+
+  useEffect(() => {
+    // URL'den code parametresini kontrol et
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+
+    if (code) {
+      console.log("Received auth code:", code);
+      getTwitterToken(code);
+    }
+  }, []);
+
+  const getTwitterToken = async (code: string) => {
+    try {
+      const response = await axios.get(
+        `https://gtt-2mc5433laq-uc.a.run.app/?x=${code}`
+      );
+
+      console.log("Token response:", response.data);
+
+      if (response.data.access_token) {
+        console.log("Access token received:", response.data.access_token);
+      }
+    } catch (error) {
+      console.error("Error getting token:", error);
+    }
+  };
+
+  const checkTwitterLike = async (accessToken: string) => {
+    try {
+      const response = await axios.post(
+        "http://localhost:3001/api/twitter/check-like",
+        {
+          username: formInputs.twitter,
+          accessToken,
+        }
+      );
+
+      console.log("Like check response:", response.data);
+    } catch (error) {
+      console.error("Error checking like:", error);
+    }
+  };
+
+  const handleConnectTwitter = () => {
+    setIsConnectingTwitter(true);
+    try {
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: "UmF0dzZCU1hGcHJMSFB1cTBUdWQ6MTpjaQ",
+        redirect_uri: "http://localhost:5173",
+        scope: "tweet.read users.read like.read",
+        state: "state",
+        code_challenge: "challenge",
+        code_challenge_method: "plain",
+      });
+
+      const authUrl = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Error connecting Twitter:", error);
+      setIsConnectingTwitter(false);
     }
   };
 
@@ -226,6 +292,26 @@ const Layout: React.FC = () => {
                   <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
                 </div>
               ))}
+              <div className="space-y-1">
+                <div className="relative flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={formInputs.twitter}
+                    onChange={handleInputChange("twitter")}
+                    className="w-full bg-transparent py-1.5 text-sm font-light tracking-wider focus:outline-none text-white/80 placeholder:text-white/20 focus:text-[#9f7aea]"
+                    placeholder="Twitter"
+                    disabled={!walletProvider || isConnectingTwitter}
+                  />
+                  <button
+                    onClick={handleConnectTwitter}
+                    disabled={isConnectingTwitter || !walletProvider}
+                    className="px-3 py-1.5 text-xs bg-[#7042f88b]/10 hover:bg-[#7042f88b]/20 border border-[#7042f88b]/20 rounded transition-all duration-300"
+                  >
+                    {isConnectingTwitter ? "Connecting..." : "Connect Twitter"}
+                  </button>
+                </div>
+                <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#7042f88b]/30 to-transparent" />
+              </div>
             </div>
 
             {/* Quest Section */}
