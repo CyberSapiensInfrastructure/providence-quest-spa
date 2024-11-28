@@ -11,7 +11,6 @@ import {
 import StackedNotifications from "./Notification";
 import ShuffleLoader from "./Loader";
 import CountdownTimer from "./CountdownTimer";
-import axios from "axios";
 
 const BackgroundCompiler = React.lazy(
   () => import("../components/BackgroundCompiler")
@@ -55,10 +54,8 @@ const Layout: React.FC = () => {
   const [isConnectingTwitter, setIsConnectingTwitter] = useState(false);
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [completedTasks, setCompletedTasks] = useState({
-    follow: false,
-    like: false,
-  });
+
+  console.log(isTwitterVerified);
   const [twitterStep, setTwitterStep] = useState<
     "connect" | "verify" | "completed"
   >("connect");
