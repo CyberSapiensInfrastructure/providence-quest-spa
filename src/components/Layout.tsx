@@ -149,7 +149,7 @@ const Layout: React.FC = () => {
       const params = new URLSearchParams({
         response_type: "code",
         client_id: "UmF0dzZCU1hGcHJMSFB1cTBUdWQ6MTpjaQ",
-        redirect_uri: "http://localhost:5173",
+        redirect_uri: "https://providence-quest-spa.onrender.com",
         scope: "users.read",
         state: "state",
         code_challenge: "challenge",
